@@ -1,6 +1,1 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd ../.. && npm install && npm run build -w @tent/storefront",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}
+{"$schema":"https://openapi.vercel.sh/vercel.json","framework":"vite","rewrites":[{"source":"/(.*)","destination":"/index.html"}]}
