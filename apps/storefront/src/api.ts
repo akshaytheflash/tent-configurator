@@ -5,7 +5,7 @@
  */
 import type { CustomerConfiguration, Quote } from '@tent/core';
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http://localhost:8787';
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || process.env.VITE_API_BASE || 'http://localhost:8787';
 
 export async function fetchQuote(config: CustomerConfiguration, quantity = 1): Promise<{ quote: Quote; config: CustomerConfiguration }> {
   const res = await fetch(`${API_BASE}/quote`, {

@@ -12,3 +12,4 @@ apps/api/.data
 # apps/configurator/public/models. Place originals in shared/models and run
 # `npm run models` to rebuild them.
 shared/models
+.vercel

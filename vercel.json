@@ -1,0 +1,18 @@
+{
+  "services": {
+    "api": {
+      "root": "apps/api",
+      "entrypoint": "src/app.ts",
+      "buildCommand": "npm install && npm run build -w @tent/api"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "api"
+      }
+    }
+  ]
+}
