@@ -1,0 +1,14 @@
+node_modules
+dist
+*.log
+.DS_Store
+.env
+apps/*/dist
+
+# local runtime data
+apps/api/.data
+
+# Source GLBs are ~30 MB; optimised models are committed in
+# apps/configurator/public/models. Place originals in shared/models and run
+# `npm run models` to rebuild them.
+shared/models

@@ -1,0 +1,33 @@
+{
+  "name": "tent-configurator",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,config,shop -c blue,magenta,green \"npm:dev -w @tent/api\" \"npm:dev -w @tent/configurator\" \"npm:dev -w @tent/storefront\"",
+    "build": "npm run build -w @tent/core && npm run build -w @tent/api && npm run build -w @tent/configurator && npm run build -w @tent/storefront",
+    "start": "concurrently -n api,config,shop -c blue,magenta,green \"npm:start -w @tent/api\" \"npm:preview -w @tent/configurator\" \"npm:preview -w @tent/storefront\"",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "models": "node scripts/build-models.mjs",
+    "pdf:sample": "node scripts/sample-pdf.mjs"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "concurrently": "^9.1.2",
+    "sharp": "^0.34.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true,
+    "sharp@0.35.5": true,
+    "sharp@0.34.5": true
+  }
+}
