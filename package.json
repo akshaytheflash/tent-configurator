@@ -8,12 +8,13 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,config,shop -c blue,magenta,green \"npm:dev -w @tent/api\" \"npm:dev -w @tent/configurator\" \"npm:dev -w @tent/storefront\"",
-    "build": "npm run build -w @tent/core && npm run build -w @tent/api && npm run build -w @tent/configurator && npm run build -w @tent/storefront",
+    "build": "npm run build -w @tent/api && npm run build -w @tent/configurator && npm run build -w @tent/storefront",
     "start": "concurrently -n api,config,shop -c blue,magenta,green \"npm:start -w @tent/api\" \"npm:preview -w @tent/configurator\" \"npm:preview -w @tent/storefront\"",
     "typecheck": "tsc -b --pretty",
-    "test": "vitest run",
+    "test": "vitest run packages",
     "models": "node scripts/build-models.mjs",
-    "pdf:sample": "node scripts/sample-pdf.mjs"
+    "pdf:sample": "node scripts/sample-pdf.mjs",
+    "test:integration": "vitest run tests/integration"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.5.1",

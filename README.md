@@ -4,13 +4,15 @@ A working replica of the reference dye-sublimation tent customiser: a 2D flat-la
 design editor, a synchronised 3D preview, server-side pricing, Shopify cart
 integration and a production PDF.
 
-**Live demo**
+**Live demo:** run `./deploy.sh` (after `npx vercel login`) to publish all three
+apps to Vercel; it prints the storefront URL and writes `deploy-urls.txt`. The
+deploy order matters because the frontends bake the API origin in at build time.
 
-| App | URL | What it is |
+| App | Local | What it is |
 | --- | --- | --- |
-| Storefront | _to be filled_ | Mock Shopify product page that embeds the configurator |
-| Configurator | _to be filled_ | The embeddable iframe app (also runs standalone) |
-| API | _to be filled_ | Mock pricing / CRM service + PDF generation |
+| Storefront | :5173 | Mock Shopify product page that embeds the configurator |
+| Configurator | :5174 | The embeddable iframe app (also runs standalone) |
+| API | :8787 | Mock pricing / CRM service + PDF generation |
 
 ---
 
@@ -118,7 +120,7 @@ Open <http://localhost:5173>, then **Customize your tent**.
 
 ```bash
 npm test                     # unit tests (core)
-npm run test:integration     # needs the API running
+npm run test:integration     # end-to-end journey, needs the API running
 npm run build                # production builds for all apps
 npm run models               # regenerate optimised GLBs from shared/models
 ```
