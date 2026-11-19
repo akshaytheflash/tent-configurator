@@ -52,10 +52,13 @@ export async function fetchPdf(
  * Persist the renders server-side so they survive the iframe and can be
  * attached to the Shopify order later.
  */
-export async function storeRenders(designId: string, renders: Record<string, string>) {
+export async function storeRenders(
+  config: CustomerConfiguration,
+  renders: Record<string, string>,
+) {
   return request<{ ok: boolean; designId: string; files: string[] }>(
-    `/designs/${encodeURIComponent(designId)}/renders`,
-    { method: 'POST', body: JSON.stringify({ renders }) },
+    `/designs/${encodeURIComponent(config.designId)}/renders`,
+    { method: 'POST', body: JSON.stringify({ config, renders }) },
   );
 }
 

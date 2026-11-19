@@ -100,7 +100,7 @@ export function App() {
       const { quote } = await fetchQuote(config);
       // Produce the artefacts the order needs while we still have the scene.
       const renders = buildRenders(layout, config, capture3D());
-      await storeRenders(config.designId, renders);
+      await storeRenders(config, renders);
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2200);
       transportRef.current?.send({ type: 'SAVED', config, quote, renders });
