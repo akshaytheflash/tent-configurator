@@ -13,3 +13,6 @@ apps/api/.data
 # `npm run models` to rebuild them.
 shared/models
 .vercel
+
+.deploy-site/
+.deploy-entry.ts

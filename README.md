@@ -4,15 +4,22 @@ A working replica of the reference dye-sublimation tent customiser: a 2D flat-la
 design editor, a synchronised 3D preview, server-side pricing, Shopify cart
 integration and a production PDF.
 
-**Live demo:** run `./deploy.sh` (after `npx vercel login`) to publish all three
-apps to Vercel; it prints the storefront URL and writes `deploy-urls.txt`. The
-deploy order matters because the frontends bake the API origin in at build time.
+**Live demo:** <https://tent-configurator-live-akshaytheflashs-projects.vercel.app/>
 
-| App | Local | What it is |
-| --- | --- | --- |
-| Storefront | :5173 | Mock Shopify product page that embeds the configurator |
-| Configurator | :5174 | The embeddable iframe app (also runs standalone) |
-| API | :8787 | Mock pricing / CRM service + PDF generation |
+The live build is a single Vercel deployment (static storefront + configurator
+under `/designer/` + the API as one bundled serverless function under `/api`), so
+pricing, the iframe bridge, render uploads and the PDF all work from one origin.
+Notes: the serverless API stores uploads in `/tmp`, so saved designs are
+per-instance; the demo resets when the function goes cold.
+
+| App | Local | Live | What it is |
+| --- | --- | --- | --- |
+| Storefront | :5173 | `/` | Mock Shopify product page that embeds the configurator |
+| Configurator | :5174 | `/designer/` | The embeddable iframe app (also runs standalone) |
+| API | :8787 | `/api` | Mock pricing / CRM service + PDF generation |
+
+Local dev: `npm install && npm run dev`. To redeploy the single bundle:
+`./deploy.sh` after `npx vercel login` (writes `deploy-urls.txt`).
 
 ---
 
