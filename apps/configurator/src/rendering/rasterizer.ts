@@ -92,15 +92,17 @@ export function renderPart(
       ctx.rotate((layer.rotation * Math.PI) / 180);
       ctx.fillStyle = layer.fill;
       ctx.font = `700 ${layer.fontSize}px ${layer.fontFamily}, Inter, system-ui, sans-serif`;
+      // The 2D editor (Konva `Text`) centres every alignment block on
+      // `layer.x`; match it exactly so the print file lines up with the canvas.
       ctx.textBaseline = 'top';
-      ctx.textAlign = layer.align;
+      ctx.textAlign = 'center';
       if ('letterSpacing' in ctx) {
         (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${layer.letterSpacing ?? 0}px`;
       }
-      const textX = layer.align === 'center' ? 0 : layer.align === 'right' ? 0 : 0;
       const lines = layer.text.split('\n');
+      const lineHeight = layer.fontSize * 1.15;
       lines.forEach((line, i) => {
-        ctx.fillText(line, textX, i * layer.fontSize * 1.15);
+        ctx.fillText(line, 0, i * lineHeight);
       });
     }
     ctx.restore();

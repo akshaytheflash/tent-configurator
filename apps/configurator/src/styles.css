@@ -38,7 +38,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
    --------------------------------------------------------------------------- */
 .app {
   display: grid;
-  grid-template-rows: 62px 1fr;
+  grid-template-rows: 62px auto 1fr;
   height: 100%;
   min-height: 0;
 }
@@ -61,6 +61,14 @@ button { font: inherit; color: inherit; cursor: pointer; }
   letter-spacing: 0.01em;
 }
 .topbar-title em { font-style: normal; opacity: 0.5; margin: 0 6px; }
+
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+.inline-error {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 9px 18px; background: #fdecea; color: #8f1d14; font-size: 12.5px;
+  border-bottom: 1px solid #f6d3cf;
+}
 
 .workspace {
   display: grid;
@@ -445,15 +453,19 @@ textarea:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
 }
 
 @media (max-width: 720px) {
-  .app { grid-template-rows: auto 1fr; }
-  .topbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; height: auto; }
-  .topbar-title { order: 3; flex-basis: 100%; font-size: 12px; }
-  .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .sidebar { grid-row: 2; padding: 10px 12px; flex-direction: column; }
+  /* Single scrolling column: the canvas needs a real height or it collapses. */
+  html, body, #root { height: auto; min-height: 100%; }
+  .app { display: flex; flex-direction: column; height: auto; min-height: 100vh; }
+  .topbar { flex-wrap: wrap; padding: 10px 12px; gap: 8px; height: auto; position: sticky; top: 0; }
+  .topbar-title { order: 3; flex-basis: 100%; font-size: 12px; text-align: left; }
+  .topbar-actions { margin-left: auto; }
+  .workspace { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .stage { order: 1; height: 58vh; min-height: 380px; }
+  .sidebar { order: 2; padding: 10px 12px; flex-direction: column; }
   .section-rail { flex-direction: row; width: 100%; overflow-x: auto; }
   .rail-btn { flex: 1; min-width: 64px; }
   .panel { width: auto; max-height: 46vh; }
-  .stage { grid-row: 1; min-height: 52vh; }
-  .pricing { grid-row: 3; }
+  .pricing { order: 3; padding: 0 12px 16px; }
   .view-hint { font-size: 10px; padding: 7px 12px; }
+  .view-presets { top: 8px; right: 8px; }
 }

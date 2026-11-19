@@ -7,7 +7,7 @@
  */
 import type { CustomerConfiguration, ProductDefinition, Quote } from '@tent/core';
 
-export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || process.env.VITE_API_BASE || 'http://localhost:8787';
+export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'http://localhost:8787';
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -32,12 +32,15 @@ export function fetchQuote(config: CustomerConfiguration, quantity = 1): Promise
   return request('/quote', { method: 'POST', body: JSON.stringify({ config, quantity }) });
 }
 
-/** Returns a blob URL for the generated PDF. */
+/**
+ * Generates the configuration PDF and returns it as a blob (for preview) and as
+ * a data URL (so it can be handed across the iframe bridge to the cart).
+ */
 export async function fetchPdf(
   config: CustomerConfiguration,
   renders: Record<string, string>,
   quantity = 1,
-): Promise<{ url: string; blob: Blob }> {
+): Promise<{ url: string; blob: Blob; dataUrl: string }> {
   const res = await fetch(`${API_BASE}/designs/${encodeURIComponent(config.designId)}/pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -45,7 +48,13 @@ export async function fetchPdf(
   });
   if (!res.ok) throw new ApiError('PDF generation failed', res.status);
   const blob = await res.blob();
-  return { url: URL.createObjectURL(blob), blob };
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('Could not read the PDF'));
+    reader.readAsDataURL(blob);
+  });
+  return { url: URL.createObjectURL(blob), blob, dataUrl };
 }
 
 /**

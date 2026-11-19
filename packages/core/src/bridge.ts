@@ -17,6 +17,7 @@ export type HostMessage =
   | { type: 'SET_ADDONS'; selectedAddons: string[] }
   | { type: 'SET_TIER'; tierId: string }
   | { type: 'REQUEST_SAVE' }
+  | { type: 'REQUEST_ADD_TO_CART' }
   | { type: 'RESET' }
   | { type: 'CLOSE' };
 
@@ -31,12 +32,12 @@ export type DesignRenders = Record<string, string>;
 export type ClientMessage =
   | { type: 'READY' }
   | { type: 'AUTO_SAVE'; config: CustomerConfiguration }
-  | { type: 'SAVED'; config: CustomerConfiguration; quote: Quote; renders?: DesignRenders }
-  | { type: 'ADD_TO_CART'; config: CustomerConfiguration; quote: Quote; renders?: DesignRenders }
+  | { type: 'SAVED'; config: CustomerConfiguration; quote: Quote; renders?: DesignRenders; pdf?: string }
+  | { type: 'ADD_TO_CART'; config: CustomerConfiguration; quote: Quote; renders?: DesignRenders; pdf?: string }
   | { type: 'CLOSE' }
   | { type: 'ERROR'; message: string };
 
-const HOST_TYPES = new Set(['INIT', 'SET_ADDONS', 'SET_TIER', 'REQUEST_SAVE', 'RESET', 'CLOSE']);
+const HOST_TYPES = new Set(['INIT', 'SET_ADDONS', 'SET_TIER', 'REQUEST_SAVE', 'REQUEST_ADD_TO_CART', 'RESET', 'CLOSE']);
 const CLIENT_TYPES = new Set(['READY', 'AUTO_SAVE', 'SAVED', 'ADD_TO_CART', 'CLOSE', 'ERROR']);
 
 function envelopeOf(data: unknown): { type: string; rest: Record<string, unknown> } | null {

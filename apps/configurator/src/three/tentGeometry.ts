@@ -11,6 +11,7 @@
  * scaled/positioned to match the parametric fabric.
  */
 import * as THREE from 'three';
+import { buildLayout } from '@tent/core';
 import type { ProductDefinition } from '@tent/core';
 
 export interface FabricInput {
@@ -57,22 +58,19 @@ export function buildTent(input: FabricInput): THREE.Group {
       metalness: 0.0,
       side: THREE.DoubleSide,
     });
-    // Front/back faces read the peak piece; left/right read the same piece,
-    // mirrored, exactly as the fabric is sewn.
-    // Face order and widths must match buildLayout()'s roof sawtooth.
-    const w = product.canopy.width;
-    const d = product.canopy.depth;
-    const total = (w + d) * 2;
-    const faces: Array<[THREE.Vector3, THREE.Vector3, number, boolean]> = [
-      [frontLeft, frontRight, w / total, true],
-      [frontRight, backRight, d / total, false],
-      [backRight, backLeft, w / total, true],
-      [backLeft, frontLeft, d / total, false],
+    // Face order matches the sawtooth order the layout draws (front, right,
+    // back, left); each face's texture triangle comes from the layout itself.
+    const faces: Array<[THREE.Vector3, THREE.Vector3]> = [
+      [frontLeft, frontRight],
+      [frontRight, backRight],
+      [backRight, backLeft],
+      [backLeft, frontLeft],
     ];
-    let uCursor = 0;
-    for (const [a, b, span, apexAtTop] of faces) {
-      const geom = roofFaceGeometry(a, b, peak, uCursor, uCursor + span, apexAtTop);
-      uCursor += span;
+    const roofUvs = buildRoofUvs(product);
+    let faceIndex = 0;
+    for (const [a, b] of faces) {
+      const geom = roofFaceGeometry(a, b, peak, roofUvs[faceIndex]!);
+      faceIndex += 1;
       const mesh = new THREE.Mesh(geom, roofMat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -122,35 +120,53 @@ export function buildTent(input: FabricInput): THREE.Group {
 }
 
 /**
- * One roof face.
+ * UV triangle for each roof face, read from the flat-lay itself.
  *
- * The roof texture is the 2D sawtooth strip (front, right, back, left). Face i
- * occupies the horizontal band [u_i, u_i+1] of that strip, with its eave edge
- * on v=0.5 (the shared eave line in the artboard) and its apex at v=0 or v=1
- * depending on whether the face was drawn apex-up or apex-down.
- *
- * Mapping straight from the artboard geometry means a logo placed on the front
- * triangle in 2D appears on the front roof face in 3D, at the same scale.
+ * The texture is rendered part-local (polygons re-origined to the part box),
+ * so a canvas point (x, y) mm maps to (u, v) = (x / box.width, 1 - y / box.height).
+ * Deriving each triangle's corners from the actual sawtooth polygon means each
+ * roof face always reads the triangle drawn for it - front/back apex-up and
+ * left/right apex-down - with nothing hand-maintained to drift.
  */
+export function buildRoofUvs(product: ProductDefinition): Array<[number, number, number, number, number, number]> {
+  const layout = buildLayout(product, ['roof']);
+  const piece = layout.pieces.find((p) => p.partId === 'roof' && p.piece === 'outer');
+  if (!piece) throw new Error('roof piece missing from layout');
+  // Textures are painted piece-local: layout.ts resolves each piece's box to
+  // its own bounding box, so the roof strip - not the narrower part box - is
+  // what fills the texture.
+  const toUv = (p: { x: number; y: number }): [number, number] => [
+    (p.x - piece.box.x) / piece.box.width,
+    1 - (p.y - piece.box.y) / piece.box.height,
+  ];
+  const faces: Array<[number, number, number, number, number, number]> = [];
+  const pts = piece.points;
+  for (let i = 1; i < pts.length - 1; i += 2) {
+    faces.push([...toUv(pts[i - 1]!), ...toUv(pts[i]!), ...toUv(pts[i + 1]!)]);
+  }
+  return faces;
+}
+
+/** One roof face, textured with the UV triangle the layout wrote for it. */
 function roofFaceGeometry(
   a: THREE.Vector3,
   b: THREE.Vector3,
   peak: THREE.Vector3,
-  uStart: number,
-  uEnd: number,
-  apexAtTop: boolean,
+  uv: [number, number, number, number, number, number],
 ): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const vertices = new Float32Array([a.x, a.y, a.z, b.x, b.y, b.z, peak.x, peak.y, peak.z]);
-  // Canvas Y grows downward; texture V grows upward, so the eave line (mid)
-  // maps to v=0.5 and apex-up faces (smaller canvas Y) map to v=1.
-  const apexV = apexAtTop ? 1 : 0;
-  const uvs = new Float32Array([uStart, 0.5, uEnd, 0.5, (uStart + uEnd) / 2, apexV]);
+  const uvs = new Float32Array(uv);
   g.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
   g.setIndex([0, 1, 2]);
-  // Face the roof outward regardless of vertex order: the face normal must
-  // point up, otherwise half the roof renders unlit (black).
+  /**
+   * Face the roof outward regardless of vertex order: the winding, and with it
+   * the vertex normals, must point up. Flipping only the index order is not
+   * enough - with `side: DoubleSide` Three flips the normal in the shader, the
+   * sampler then runs with a negative t and picks mip levels that include the
+   * transparent area outside the triangle, which dims the face to black.
+   */
   const n = new THREE.Vector3().crossVectors(
     new THREE.Vector3().subVectors(b, a),
     new THREE.Vector3().subVectors(peak, a),

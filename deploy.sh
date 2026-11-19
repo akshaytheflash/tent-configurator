@@ -22,7 +22,7 @@ fi
 
 echo "==> Building storefront (same-origin API)"
 rm -rf apps/storefront/dist
-(cd apps/storefront && VITE_API_BASE=/api VITE_CONFIGURATOR_URL="${ALIAS}/designer/" npx vite build)
+(cd apps/storefront && VITE_API_BASE=/api VITE_CONFIGURATOR_URL=/designer npx vite build)
 
 echo "==> Building configurator for /designer/"
 rm -rf apps/configurator/dist

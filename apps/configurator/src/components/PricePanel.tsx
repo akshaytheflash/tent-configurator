@@ -1,42 +1,53 @@
-/**
- * Live pricing panel.
- *
- * Asks the pricing API for a quote whenever the configuration changes (debounced),
- * and renders the server's line items. There are no prices in this component -
- * if the API is unreachable the panel says so rather than showing a stale total.
- */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Quote } from '@tent/core';
 import { fetchQuote } from '../api';
 import { useConfigurator } from '../store';
 
-export function useQuote() {
+/**
+ * Server-priced quote for the current design. `immediate` skips the debounce
+ * for actions that must not use a stale price (save, add to cart, PDF).
+ */
+export function useQuote(immediate = false) {
   const config = useConfigurator((s) => s.config);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Serialise the design without object URLs so the effect only re-runs on real
-  // changes (src values are stable per upload).
-  const signature = JSON.stringify({
-    tier: config.tierId,
-    addons: config.selectedAddons,
-    parts: Object.values(config.parts).map((p) => ({
-      id: p.partId,
-      color: p.color.pantone,
-      mode: p.printMode,
-      layers: p.layers.map((l) => ({ t: l.type, x: Math.round(l.x), y: Math.round(l.y), s: l.type === 'image' ? Math.round(l.width) : l.fontSize, on: l.visible })),
-    })),
-  });
+  // changes (src values are stable per upload). Text content is part of it,
+  // otherwise editing a headline would not re-price... or re-render.
+  const signature = useMemo(
+    () =>
+      JSON.stringify({
+        tier: config.tierId,
+        addons: config.selectedAddons,
+        parts: Object.values(config.parts).map((p) => ({
+          id: p.partId,
+          color: p.color.pantone,
+          mode: p.printMode,
+          layers: p.layers.map((l) => ({
+            id: l.id,
+            t: l.type,
+            text: l.type === 'text' ? l.text : undefined,
+            fill: l.type === 'text' ? l.fill : undefined,
+            x: Math.round(l.x),
+            y: Math.round(l.y),
+            s: l.type === 'image' ? Math.round(l.width) : l.fontSize,
+            on: l.visible,
+          })),
+        })),
+      }),
+    [config],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
-    const timer = window.setTimeout(() => {
+    const run = () => {
       fetchQuote(config)
-        .then(({ quote }) => {
+        .then(({ quote: q }) => {
           if (controller.signal.aborted) return;
-          setQuote(quote);
+          setQuote(q);
           setError(null);
         })
         .catch((e: Error) => {
@@ -44,7 +55,8 @@ export function useQuote() {
           setError(e.message);
         })
         .finally(() => !controller.signal.aborted && setLoading(false));
-    }, 180);
+    };
+    const timer = immediate ? window.setTimeout(run, 0) : window.setTimeout(run, 180);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
@@ -55,11 +67,12 @@ export function useQuote() {
   return { quote, error, loading };
 }
 
-export function PricePanel({ onSave, saving, saveLabel, onPreviewPdf }: {
+export function PricePanel({ onSave, saving, saveLabel, onPreviewPdf, onAddToCart }: {
   onSave: () => void;
   saving: boolean;
   saveLabel: string;
   onPreviewPdf?: () => void;
+  onAddToCart?: () => void;
 }) {
   const { quote, error, loading } = useQuote();
   const config = useConfigurator((s) => s.config);
@@ -102,6 +115,11 @@ export function PricePanel({ onSave, saving, saveLabel, onPreviewPdf }: {
         <button type="button" className="btn btn-primary btn-block" disabled={saving || !quote} onClick={onSave}>
           {saving ? 'Saving…' : saveLabel}
         </button>
+        {onAddToCart && (
+          <button type="button" className="btn btn-outline btn-block" disabled={saving || !quote} onClick={onAddToCart}>
+            Add to cart
+          </button>
+        )}
         {onPreviewPdf && (
           <button type="button" className="btn btn-outline btn-block" onClick={onPreviewPdf}>
             Preview configuration PDF

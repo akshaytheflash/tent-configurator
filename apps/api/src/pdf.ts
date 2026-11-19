@@ -84,26 +84,45 @@ export async function buildConfigurationPdf(opts: {
     y -= 15;
   }
 
-  // Layered artwork detail.
+  // Artwork: one sheet per customised part so the customer sees exactly what
+  // is going on the fabric (text, colour and placement) before approving.
   const artworkParts = Object.entries(config.parts).filter(([, p]) => p.layers.length);
   if (artworkParts.length) {
-    y = sectionTitle(page, bold, 'Artwork placement', y - 6);
     for (const [partId, part] of artworkParts) {
-      if (y < MARGIN + 90) {
-        page = doc.addPage([PAGE_W, PAGE_H]);
-        y = PAGE_H - MARGIN;
+      page = doc.addPage([PAGE_W, PAGE_H]);
+      y = drawHeader(page, bold, regular, `Artwork - ${partLabel(product, partId)}`, config.designId);
+
+      const tile = await embedImage(doc, assets[`part-${partId}.png`]);
+      if (tile) {
+        const w = PAGE_W - MARGIN * 2;
+        const h = Math.min((tile.height / tile.width) * w, 250);
+        page.drawImage(tile, { x: MARGIN, y: y - 16 - h, width: w, height: h });
+        y -= h + 28;
+      } else {
+        page.drawRectangle({ x: MARGIN, y: y - 120, width: PAGE_W - MARGIN * 2, height: 100, borderColor: RULE, borderWidth: 0.7 });
+        page.drawText('Sheet preview not captured for this design.', { x: MARGIN + 10, y: y - 70, size: 8, font: regular, color: MUTED });
+        y -= 132;
       }
-      page.drawText(partId, { x: MARGIN, y, size: 9, font: bold, color: INK });
-      y -= 12;
+
+      y = keyValueRows(page, regular, bold, y, [
+        ['Fabric', part.color.pantone],
+        ['Print', part.printMode === 'double' ? 'Double sided' : 'Single sided'],
+        ['Elements', String(part.layers.length)],
+      ]);
+
+      y = sectionTitle(page, bold, 'Elements', y);
       for (const layer of part.layers) {
+        if (y < MARGIN + 40) {
+          page = doc.addPage([PAGE_W, PAGE_H]);
+          y = PAGE_H - MARGIN;
+        }
         const desc =
           layer.type === 'image'
             ? `Image "${layer.asset?.name ?? 'uploaded'}"  x ${Math.round(layer.x)}  y ${Math.round(layer.y)}  ${Math.round(layer.width)}x${Math.round(layer.height)} mm  rot ${Math.round(layer.rotation)}°`
-            : `Text "${layer.text}"  ${Math.round(layer.fontSize)} mm  rot ${Math.round(layer.rotation)}°`;
-        page.drawText(desc, { x: MARGIN + 12, y, size: 8.5, font: regular, color: MUTED });
+            : `Text "${layer.text.replace(/\n/g, ' / ')}"  ${Math.round(layer.fontSize)} mm  rot ${Math.round(layer.rotation)}°  ${layer.fill}`;
+        page.drawText(truncate(desc, 110), { x: MARGIN, y, size: 8.5, font: regular, color: MUTED });
         y -= 12;
       }
-      y -= 4;
     }
   }
 
@@ -125,7 +144,7 @@ export async function buildConfigurationPdf(opts: {
   page.drawText(total, { x: PAGE_W - MARGIN - bold.widthOfTextAtSize(total, 12), y: y - 8, size: 12, font: bold, color: INK });
   y -= 34;
 
-  // Production views.
+  // Production views (only the angles that were actually captured).
   const views = ['view-front', 'view-back', 'view-left', 'view-right'] as const;
   page = doc.addPage([PAGE_W, PAGE_H]);
   y = PAGE_H - MARGIN;
@@ -240,6 +259,16 @@ async function embedImage(doc: PDFDocument, data: Uint8Array | undefined): Promi
   } catch {
     return null;
   }
+}
+
+function partLabel(product: ProductDefinition, partId: string) {
+  return product.parts.find((p) => p.id === partId)?.label ?? partId;
+}
+
+/** Standard fonts are Latin-1 only; keep long strings inside the page too. */
+function truncate(text: string, max: number) {
+  const clean = text.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?');
+  return clean.length > max ? `${clean.slice(0, max - 1)}…`.replace('…', '...') : clean;
 }
 
 function hexToRgb(hex: string) {

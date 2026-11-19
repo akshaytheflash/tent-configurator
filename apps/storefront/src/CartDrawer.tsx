@@ -6,23 +6,26 @@ export interface CartLine {
   designId: string;
   variant: string;
   quote: Quote;
+  /** Configuration PDF as a blob/data URL so it opens from the cart. */
   pdfUrl: string;
+  /** 3D render of this exact design, if the designer captured one. */
+  previewUrl?: string;
   payload: CartPayload;
   config: CustomerConfiguration;
 }
 
-export function CartDrawer({ open, lines, onClose, onRemove }: {
+export function CartDrawer({ open, lines, onClose, onRemove, onCheckout }: {
   open: boolean;
   lines: CartLine[];
   onClose: () => void;
   onRemove: (id: string) => void;
-  apiBase: string;
+  onCheckout: () => void;
 }) {
   const subtotal = lines.reduce((sum, l) => sum + l.quote.total, 0);
   return (
     <>
       {open && <button type="button" className="scrim" aria-label="Close cart" onClick={onClose} />}
-      <aside className="cart" data-open={open} aria-hidden={!open}>
+      <aside className="cart" data-open={open} aria-hidden={!open} role="dialog" aria-label="Your cart">
         <header className="cart-head">
           <h2>Your cart</h2>
           <button type="button" className="link" onClick={onClose}>Close</button>
@@ -31,9 +34,16 @@ export function CartDrawer({ open, lines, onClose, onRemove }: {
           {!lines.length && <p className="cart-empty">Nothing here yet. Customize a tent to see the full line-item payload here.</p>}
           {lines.map((line) => (
             <article key={line.id} className="cart-line">
-              <div className="cart-line-head">
-                <strong>{line.title}</strong>
-                <span>{`${line.quote.currency} ${line.quote.total.toFixed(2)}`}</span>
+              <div className="cart-line-top">
+                {line.previewUrl ? (
+                  <img className="cart-thumb" src={line.previewUrl} alt="" />
+                ) : (
+                  <div className="cart-thumb cart-thumb-empty" aria-hidden="true" />
+                )}
+                <div className="cart-line-head">
+                  <strong>{line.title}</strong>
+                  <span>{`${line.quote.currency} ${line.quote.total.toFixed(2)}`}</span>
+                </div>
               </div>
               <dl>
                 <dt>Design</dt><dd><code>{line.designId}</code></dd>
@@ -54,7 +64,10 @@ export function CartDrawer({ open, lines, onClose, onRemove }: {
         {lines.length > 0 && (
           <footer className="cart-foot">
             <div><span>Subtotal</span><strong>${subtotal.toFixed(2)}</strong></div>
-            <button type="button" className="btn btn-dark btn-lg btn-block">Checkout</button>
+            <p className="cart-note">Mock checkout — no payment is taken.</p>
+            <button type="button" className="btn btn-dark btn-lg btn-block" onClick={onCheckout}>
+              Checkout
+            </button>
           </footer>
         )}
       </aside>

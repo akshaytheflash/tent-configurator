@@ -13,6 +13,7 @@
  *   GET  /pricing/:id                 active pricing rules + addon prices
  *   POST /quote                       { config, quantity } -> Quote (authoritative)
  *   POST /orders                      persist configuration + attach PDF (CRM mock)
+ *   POST /checkout                    mock payment -> order + invoice PDF
  *   GET  /orders/:id                  retrieve
  *   POST /designs/:id/pdf             build the production PDF from stored renders
  *   POST /uploads                     image upload (returns asset id)
@@ -33,8 +34,10 @@ import {
   type CustomerConfiguration,
   type PriceRequest,
   type PricingRules,
+  type Quote,
 } from '@tent/core';
 import { buildConfigurationPdf, type PdfAssets } from './pdf.js';
+import { buildInvoicePdf } from './invoice.js';
 
 /**
  * Serverless platforms mount the app read-only, so storage falls back to a
@@ -171,13 +174,16 @@ const designs = new Map<string, StoredDesign>();
 interface StoredOrder {
   orderId: string;
   shopifyOrderId?: string;
-  customer?: { name?: string; email?: string; company?: string };
+  customer?: { name?: string; email?: string; company?: string; address?: string; name_on_card?: string };
   quoteId: string;
   totalCents: number;
   currency: string;
   pdfPath: string;
+  invoicePath?: string;
   config: CustomerConfiguration;
   createdAt: string;
+  quantity: number;
+  paymentMethod: string;
 }
 const orders = new Map<string, StoredOrder>();
 
@@ -198,7 +204,7 @@ app.post('/designs/:id/renders', async (req, res) => {
 function sanitizeRenders(renders: Record<string, string>) {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(renders)) {
-    if (/^[a-z0-9-]+\.(png|jpe?g)$/i.test(k) && typeof v === 'string' && /^data:image\/(png|jpeg);base64,/.test(v)) {
+    if (/^[a-z0-9_-]+\.(png|jpe?g)$/i.test(k) && typeof v === 'string' && /^data:image\/(png|jpeg);base64,/.test(v)) {
       out[k] = v;
     }
   }
@@ -264,22 +270,14 @@ app.post('/designs/:id/pdf', async (req, res) => {
   }
 });
 
-app.post('/orders', async (req, res) => {
-  const body = req.body as {
-    config?: CustomerConfiguration;
-    renders?: Record<string, string>;
-    quoteId?: string;
-    totalCents?: number;
-    currency?: string;
-    customer?: { name?: string; email?: string; company?: string };
-    shopifyOrderId?: string;
-    quantity?: number;
-  };
-  if (!body.config) return res.status(400).json({ error: 'Missing config' });
+/**
+ * Prices an order request server-side. The cart never decides the amount.
+ * Returns `{ quote }` or an error response payload.
+ */
+function priceRequest(body: OrderRequest): { quote: Quote } | { status: number; error: string } {
+  if (!body.config) return { status: 400, error: 'Missing config' };
   const product = getProduct(body.config.productId);
-  if (!product) return res.status(404).json({ error: 'Unknown product' });
-
-  // Re-price server-side: the cart never decides the amount.
+  if (!product) return { status: 404, error: 'Unknown product' };
   const quote = quoteFromRequest(product, {
     productId: product.id,
     tierId: body.config.tierId,
@@ -288,54 +286,199 @@ app.post('/orders', async (req, res) => {
     designStats: designStatsFor(body.config),
     quantity: Math.max(1, Math.floor(body.quantity ?? 1)),
   }, rulesFor(product.id));
+  return { quote };
+}
+
+app.post('/orders', async (req, res) => {
+  const body = req.body as OrderRequest;
+  const priced = priceRequest(body);
+  if ('status' in priced) return res.status(priced.status).json({ error: priced.error });
+  const result = await createOrder({ ...body, config: body.config!, quote: priced.quote });
+  if ('status' in result) return res.status(result.status).json({ error: result.error });
+  res.json(result);
+});
+
+/**
+ * Mock checkout. One call per cart: validates the live quote, "captures" the
+ * payment, issues an invoice for the order and returns what the confirmation
+ * page needs (order number, totals, invoice link).
+ */
+app.post('/checkout', async (req, res) => {
+  const body = req.body as OrderRequest & { email?: string; name?: string };
+  const priced = priceRequest(body);
+  if ('status' in priced) return res.status(priced.status).json({ error: priced.error });
+  const customer = {
+    ...body.customer,
+    name: body.customer?.name ?? body.name,
+    email: body.customer?.email ?? body.email,
+  };
+  const result = await createOrder({ ...body, customer, config: body.config!, quote: priced.quote });
+  if ('status' in result) return res.status(result.status).json({ error: result.error });
+  res.json({
+    ...result,
+    invoiceNumber: result.orderId,
+    paidAt: new Date().toISOString(),
+  });
+});
+
+interface OrderRequest {
+  config?: CustomerConfiguration;
+  renders?: Record<string, string>;
+  quoteId?: string;
+  customer?: { name?: string; email?: string; company?: string; address?: string; name_on_card?: string };
+  shopifyOrderId?: string;
+  quantity?: number;
+  paymentMethod?: string;
+  /** Renders the host already holds for the design; falls back to the stored design. */
+  email?: string;
+  name?: string;
+}
+
+interface OrderResult {
+  orderId: string;
+  shopifyOrderId?: string;
+  customer?: { name?: string; email?: string; company?: string; address?: string; name_on_card?: string };
+  quoteId: string;
+  totalCents: number;
+  currency: string;
+  quantity: number;
+  createdAt: string;
+  total: number;
+  pdfUrl: string;
+  invoiceUrl: string;
+}
+type OrderOrError = OrderResult | { status: number; error: string };
+
+/**
+ * Shared by POST /orders and POST /checkout: re-price, build the configuration
+ * summary, issue an invoice and remember the order. The client never sends a
+ * price, and a stale quote id is rejected.
+ */
+async function createOrder(
+  body: OrderRequest & { config: CustomerConfiguration; quote: Quote },
+): Promise<OrderOrError> {
+  const { config, quote, customer } = body;
+  const product = getProduct(config.productId);
+  if (!product) return { error: 'Unknown product', status: 404 };
   if (body.quoteId && body.quoteId !== quote.quoteId) {
-    return res.status(409).json({ error: 'Quote expired or does not match this design', expected: quote.quoteId });
+    return { error: 'Quote expired or does not match this design', status: 409 };
   }
 
+  const stored = designs.get(config.designId);
+  const renders = sanitizeRenders(body.renders ?? stored?.renders ?? {});
   const assets: PdfAssets = {};
-  for (const [name, dataUrl] of Object.entries(sanitizeRenders(body.renders ?? {}))) {
+  for (const [name, dataUrl] of Object.entries(renders)) {
     assets[name] = Buffer.from(dataUrl.split(',')[1], 'base64');
   }
-  const pdf = await buildConfigurationPdf({ config: body.config, product, quote, assets, customer: body.customer });
-  const orderId = `CRM-${randomUUID().slice(0, 8).toUpperCase()}`;
-  const pdfPath = join(DATA_DIR, 'orders', `${body.config.designId}.pdf`);
-  await writeFile(pdfPath, pdf);
+
+  const orderId = `MVP-${new Date().getFullYear()}-${randomUUID().slice(0, 6).toUpperCase()}`;
+  const quantity = Math.max(1, Math.floor(body.quantity ?? 1));
+  const taxRate = Number(process.env.TAX_RATE ?? 0);
+  const issuedAt = new Date();
+
+  const [summary, invoice] = await Promise.all([
+    buildConfigurationPdf({ config, product, quote, assets, customer }),
+    buildInvoicePdf({
+      orderId,
+      issuedAt,
+      customer,
+      config,
+      product,
+      quote,
+      quantity,
+      taxRate,
+      paymentRef: `MOCK-${randomUUID().slice(0, 4).toUpperCase()}`,
+    }),
+  ]);
+
+  const pdfPath = join(DATA_DIR, 'orders', `${config.designId}.pdf`);
+  const invoicePath = join(DATA_DIR, 'orders', `${orderId}.invoice.pdf`);
+  await writeFile(pdfPath, summary);
+  await writeFile(invoicePath, invoice);
 
   const order: StoredOrder = {
     orderId,
     shopifyOrderId: body.shopifyOrderId,
-    customer: body.customer,
+    customer,
     quoteId: quote.quoteId,
     totalCents: quote.totalCents,
     currency: quote.currency,
     pdfPath,
-    config: body.config,
-    createdAt: new Date().toISOString(),
+    invoicePath,
+    config,
+    createdAt: issuedAt.toISOString(),
+    quantity,
+    paymentMethod: body.paymentMethod ?? 'card',
   };
   orders.set(orderId, order);
-  await writeFile(join(DATA_DIR, 'orders', `${orderId}.json`), JSON.stringify(order, null, 2));
-  res.json({ ...order, total: quote.total, pdfUrl: `/orders/${orderId}/pdf` });
-});
+  await writeFile(join(DATA_DIR, 'orders', `${orderId}.json`), JSON.stringify({ ...order, quote }, null, 2));
+  return {
+    orderId,
+    shopifyOrderId: order.shopifyOrderId,
+    customer,
+    quoteId: quote.quoteId,
+    totalCents: order.totalCents,
+    currency: order.currency,
+    quantity,
+    createdAt: order.createdAt,
+    total: quote.total,
+    pdfUrl: `/orders/${orderId}/pdf`,
+    invoiceUrl: `/orders/${orderId}/invoice`,
+  };
+}
 
 app.get('/orders', (_req, res) => {
   res.json([...orders.values()].map(({ config: _c, ...rest }) => rest));
 });
 
 app.get('/orders/:id', (req, res) => {
-  const order = orders.get(req.params.id);
-  if (!order) return res.status(404).json({ error: 'Unknown order' });
-  res.json({ ...order, total: order.totalCents / 100, pdfUrl: `/orders/${order.orderId}/pdf` });
+  ensureOrder(req.params.id).then((order) => {
+    if (!order) return res.status(404).json({ error: 'Unknown order' });
+    res.json({ ...order, total: order.totalCents / 100, pdfUrl: `/orders/${order.orderId}/pdf`, invoiceUrl: `/orders/${order.orderId}/invoice` });
+  });
 });
 
+/** Orders live in memory plus disk; a fresh serverless instance reads the disk. */
+async function ensureOrder(id: string): Promise<StoredOrder | null> {
+  const cached = orders.get(id);
+  if (cached) return cached;
+  try {
+    const order = JSON.parse(await readFile(join(DATA_DIR, 'orders', `${id}.json`), 'utf8')) as StoredOrder & { quote?: Quote };
+    orders.set(id, order);
+    return order;
+  } catch {
+    return null;
+  }
+}
+
 app.get('/orders/:id/pdf', async (req, res) => {
-  const order = orders.get(req.params.id);
-  if (!order) return res.status(404).json({ error: 'Unknown order' });
-  const info = await stat(order.pdfPath);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Length', String(info.size));
-  res.setHeader('Content-Disposition', `attachment; filename="${order.config.designId}-configuration.pdf"`);
-  res.send(await readFile(order.pdfPath));
+  await sendOrderFile(req.params.id, 'pdfPath', res, 'summary');
 });
+
+app.get('/orders/:id/invoice', async (req, res) => {
+  await sendOrderFile(req.params.id, 'invoicePath', res, 'invoice');
+});
+
+async function sendOrderFile(
+  id: string,
+  field: 'pdfPath' | 'invoicePath',
+  res: express.Response,
+  filenamePart: string,
+) {
+  const order = await ensureOrder(id);
+  if (!order) return res.status(404).json({ error: 'Unknown order' });
+  const path = field === 'pdfPath' ? order.pdfPath : order.invoicePath;
+  if (!path) return res.status(404).json({ error: 'File not available' });
+  try {
+    const info = await stat(path);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', String(info.size));
+    res.setHeader('Content-Disposition', `inline; filename="${order.orderId}-${filenamePart}.pdf"`);
+    res.send(await readFile(path));
+  } catch {
+    res.status(404).json({ error: 'File not available on this instance' });
+  }
+}
 
 // A webhook stub showing where Shopify order data would arrive.
 app.post('/webhooks/shopify/orders-create', async (req, res) => {
